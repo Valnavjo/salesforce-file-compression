@@ -1,0 +1,124 @@
+<apex:page controller="SfdcZipSampleController" showHeader="true" sidebar="false">
+
+<head>
+	<script type="text/javascript" src="/soap/ajax/26.0/connection.js"> </script>
+
+	<apex:includeScript value="{!URLFOR($Resource.jQuery, '/jquery-1.8.2.min.js')}"/>
+
+	<apex:includeScript value="{!URLFOR($Resource.js_zip, '/jszip.js')}"/>
+	<apex:includeScript value="{!URLFOR($Resource.js_zip, '/jszip-load.js')}"/>
+	<apex:includeScript value="{!URLFOR($Resource.js_zip, '/jszip-deflate.js')}"/>
+	<apex:includeScript value="{!URLFOR($Resource.js_zip, '/jszip-inflate.js')}"/>
+
+    <script type="text/javascript">
+        var j$ = jQuery.noConflict();
+
+        j$(document).ready(function() {
+        	//Hide upload button
+        	var uploadZipButton = j$('input[id$=uploadZipButton]');
+        	uploadZipButton.css('display', 'none');
+        	
+        	//Instantiate JSZip
+        	var zipFile = new JSZip();
+
+			//Intercept click event
+        	j$('a[id=generateZipLink]').click(function() {
+
+				var checkedSize = j$("input[name='att_ids_group[]']:checked").size();
+				var count = 0;
+
+				//Iterate over each selected file				
+				j$("input[name='att_ids_group[]']:checked").each(function() {
+					//Refresh zip process status
+					j$('span[id$=zipStatus]').text('Getting file...');
+					
+					//Get file using javascript remoting
+					Visualforce.remoting.Manager.invokeAction(
+						'{!$RemoteAction.SfdcZipSampleController.getAttachment}',
+						j$(this).val(),
+						function(result, event){
+							if (event.status) {
+								//Refresh zip process status
+								j$('span[id$=zipStatus]').text('Compressing file "' + result.attName + '"...');
+
+								count++;
+								
+								//Add the file
+								compressFile(zipFile, result.attName, result.attEncodedBody);
+								
+								//Once all the selected files have been compressed
+								if (count == checkedSize) {
+									//Refresh zip process status
+									j$('span[id$=zipStatus]').text('Generating zip file...');
+									
+									//Send form
+									sendZip(zipFile);
+								}
+							} else if (event.type === 'exception') {
+								alert('Exception: ' + event.message);
+							} else {
+								alert('Message: ' + event.message);
+							}
+						}, 
+						{escape: true}
+					);//End getAttachment
+
+				});//end each selected attId
+        	});//end click
+			
+			//Compress one single file
+			function compressFile(zipFile, name, data) {
+				zipFile.file(name, data, {base64:true});
+			}
+
+			//Generate and upload zip file
+			function sendZip(zipFile) {
+				var data = zipFile.generate();
+						
+				var zipContent = j$('input[id$=zipContent]');
+				zipContent.val(data);
+				
+				//Refresh zip process status
+				j$('span[id$=zipStatus]').text('Uploading zip file...');
+				
+				var uploadZipButton = j$('input[id$=uploadZipButton]');
+				uploadZipButton.trigger('click');
+			}
+        });
+    </script>
+</head>
+
+<apex:form id="uploadZipForm" enctype="multipart/form-data">
+	
+	<apex:inputHidden id="zipContent" value="{!zipContent}" />
+	
+	<apex:commandButton id="uploadZipButton" value="Upload" action="{!uploadZip}" reRender="thePageBlock" />
+	
+	<apex:pageBlock id="thePageBlock" title="My Content">
+		<apex:pageBlockTable value="{!attachments}" var="att">
+			
+			<apex:column >
+				<input type="checkbox" name="att_ids_group[]" value="{!att.Id}" />
+			</apex:column>
+			<apex:column value="{!att.Name}" />
+			<apex:column value="{!att.ContentType}" />
+			<apex:column value="{!att.BodyLength} kb" />
+			<apex:column value="{!att.ParentId}" />
+
+		</apex:pageBlockTable>
+	</apex:pageBlock>
+
+	<apex:outputLabel for="zipFileName" value="File name: " />
+	<apex:inputText id="zipFileName" value="{!zipFileName}" />.zip
+	
+	<p>
+		<a id="generateZipLink" href="#">Generate zip</a>
+	</p>
+	<p>
+		<span>Status: </span>
+		<span id="zipStatus"></span>
+	</p>
+	
+</apex:form>
+
+</apex:page>
